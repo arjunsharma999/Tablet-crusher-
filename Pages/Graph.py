@@ -7,6 +7,8 @@ from PyQt5.QtCore import QTime, QThread, pyqtSignal, QTimer
 from GetData import GetData
 
 class GraphWidget(QWidget):
+    # Emitted when test completes: (peak_time_seconds, peak_pressure)
+    test_completed_signal = pyqtSignal(float, float)
     def __init__(self, parent=None, sensitivity_threshold=None):
         super().__init__(parent)
         
@@ -121,7 +123,6 @@ class GraphWidget(QWidget):
             self.plot_widget.removeItem(self.peak_marker)
             self.peak_marker = None
         
-        # Update UI
         self.start_test_btn.setEnabled(False)
         self.sensitivity_input.setEnabled(False)
         self.test_mode_btn.setEnabled(False)
@@ -136,7 +137,6 @@ class GraphWidget(QWidget):
         self.peak_pressure = None
         self.peak_time = None
         
-        # Stop test mode timer
         self.test_timer.stop()
         
         # Clear data
@@ -164,6 +164,9 @@ class GraphWidget(QWidget):
         """Add new pressure value to graph"""
         if value is None:
             return
+        # Only record data during an active test window
+        if not self.test_started or self.test_completed:
+            return
 
         elapsed = self.start_time.msecsTo(QTime.currentTime()) / 1000.0  # seconds
         self.x.append(elapsed)
@@ -181,6 +184,8 @@ class GraphWidget(QWidget):
                 # Stop test mode timer if it's running
                 if self.test_mode:
                     self.test_timer.stop()
+                # Mark as no longer actively recording
+                self.test_started = False
                 
                 # Add peak marker
                 self.peak_marker = self.plot_widget.plot([self.peak_time], [self.peak_pressure], 
@@ -200,14 +205,14 @@ class GraphWidget(QWidget):
                 # Update the curve data before returning
                 self.curve.setData(self.x, self.y)
                 self.plot_widget.update()
+                # Notify listeners (e.g., container window) that test is complete
+                try:
+                    self.test_completed_signal.emit(self.peak_time or 0.0, self.peak_pressure or 0.0)
+                except Exception:
+                    pass
                 return
 
-        # Keep last max_points for smooth visualization
-        if len(self.x) > self.max_points:
-            # Remove older points but keep more for smoother curve
-            remove_count = len(self.x) - self.max_points
-            self.x = self.x[remove_count:]
-            self.y = self.y[remove_count:]
+        # Do not trim points; preserve full run from start to threshold
 
         # Update the curve data
         self.curve.setData(self.x, self.y)

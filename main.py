@@ -96,6 +96,11 @@ class MainPageWindow(QtWidgets.QMainWindow):
         self._serial_reader = SerialReader(reader=GetData(), command="RAI01;", delay_seconds=0.1)
         self._serial_reader.new_value.connect(self._graph_widget.update_plot)
         self._serial_reader.error.connect(self._on_serial_error)
+        # Stop acquisition when the graph reports completion
+        try:
+            self._graph_widget.test_completed_signal.connect(self._on_test_completed)
+        except Exception:
+            pass
 
     def _toggle_graph(self, show: bool):
         self._ensure_graph_initialized()
@@ -119,6 +124,15 @@ class MainPageWindow(QtWidgets.QMainWindow):
 
     def _on_serial_error(self, message: str):
         print(f"Serial Error: {message}")
+
+    def _on_test_completed(self, peak_time_s: float, peak_pressure: float):
+        # Stop reader so no more points arrive
+        try:
+            if self._serial_reader is not None and self._serial_reader.isRunning():
+                self._serial_reader.stop()
+                self._serial_reader.wait(1500)
+        except Exception:
+            pass
 
     def _on_back_clicked(self, event):
         # If graph is visible, hide it first and restore controls
