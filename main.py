@@ -45,7 +45,7 @@ class HomeWindow(QtWidgets.QMainWindow):
         animation.start()
 
 class MainPageWindow(QtWidgets.QMainWindow):
-    def __init__(self, start_with_graph: bool = False):
+    def __init__(self, start_with_graph: bool = False, sensitivity_threshold: float = None):
         super().__init__()
         self.ui = Ui_MainPage()
         self.ui.setupUi(self)
@@ -65,6 +65,7 @@ class MainPageWindow(QtWidgets.QMainWindow):
         self._serial_reader = None
         self._graph_visible = False
         self._start_with_graph = start_with_graph
+        self._sensitivity_threshold = sensitivity_threshold
 
         # Connect the Test button to toggle the embedded real-time graph
         if hasattr(self.ui, "pushButton_2") and self.ui.pushButton_2 is not None:
@@ -83,7 +84,7 @@ class MainPageWindow(QtWidgets.QMainWindow):
         # Place graph where the control grid is currently located
         target_parent = getattr(self.ui, "widget_2", self)
         geometry_source = getattr(self.ui, "layoutWidget", None)
-        self._graph_widget = GraphWidget(target_parent)
+        self._graph_widget = GraphWidget(target_parent, sensitivity_threshold=self._sensitivity_threshold)
         if geometry_source is not None:
             self._graph_widget.setGeometry(geometry_source.geometry())
         else:
@@ -323,8 +324,18 @@ class ReviewWindow(QtWidgets.QMainWindow):
             self._fade_to_window(self._cal_window)
 
     def _on_test_clicked(self):
+        # Get sensitivity value from the calculation window
+        sensitivity = None
+        try:
+            if hasattr(self._cal_window, "ui") and hasattr(self._cal_window.ui, "lineEdit_3"):
+                sensitivity_text = self._cal_window.ui.lineEdit_3.text().strip()
+                if sensitivity_text:
+                    sensitivity = float(sensitivity_text)
+        except (ValueError, AttributeError):
+            pass
+        
         # Proceed to Main page and auto-show graph
-        next_main = MainPageWindow(start_with_graph=True)
+        next_main = MainPageWindow(start_with_graph=True, sensitivity_threshold=sensitivity)
         self._fade_to_window(next_main)
 
     def _fade_to_window(self, next_window: QtWidgets.QMainWindow):
