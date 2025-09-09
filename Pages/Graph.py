@@ -178,6 +178,10 @@ class GraphWidget(QWidget):
                 self.peak_time = elapsed
                 self.test_completed = True
                 
+                # Stop test mode timer if it's running
+                if self.test_mode:
+                    self.test_timer.stop()
+                
                 # Add peak marker
                 self.peak_marker = self.plot_widget.plot([self.peak_time], [self.peak_pressure], 
                                                        symbol='o', symbolSize=10, 
@@ -185,12 +189,13 @@ class GraphWidget(QWidget):
                                                        symbolBrush='red')
                 
                 # Update UI
-                self.peak_label.setText(f"Peak Pressure: {self.peak_pressure:.2f} hPa")
+                self.peak_label.setText(f"Peak Pressure: {self.peak_pressure:.2f} hPa - TEST COMPLETED")
                 self.peak_label.setStyleSheet("font-weight: bold; color: green;")
                 
                 # Re-enable controls
                 self.start_test_btn.setEnabled(True)
                 self.sensitivity_input.setEnabled(True)
+                self.test_mode_btn.setEnabled(True)
                 
                 # Update the curve data before returning
                 self.curve.setData(self.x, self.y)
@@ -258,6 +263,7 @@ class GraphWidget(QWidget):
         import math
         
         if not self.test_mode or self.test_completed:
+            self.test_timer.stop()  # Stop timer if test is completed
             return
         
         # Generate increasing pressure with some noise
