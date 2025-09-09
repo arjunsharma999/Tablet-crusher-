@@ -33,6 +33,7 @@ class GraphWidget(QWidget):
         # Test control buttons
         self.start_test_btn = QPushButton("Start Test")
         self.reset_test_btn = QPushButton("Reset Test")
+        self.test_mode_btn = QPushButton("Test Mode (Fake Data)")
         
         # Peak pressure display
         self.peak_label = QLabel("Peak Pressure: Not detected")
@@ -42,6 +43,7 @@ class GraphWidget(QWidget):
         control_layout.addWidget(self.sensitivity_input)
         control_layout.addWidget(self.start_test_btn)
         control_layout.addWidget(self.reset_test_btn)
+        control_layout.addWidget(self.test_mode_btn)
         control_layout.addWidget(self.peak_label)
         control_layout.addStretch()
         
@@ -80,6 +82,12 @@ class GraphWidget(QWidget):
         # Connect button signals
         self.start_test_btn.clicked.connect(self.start_test)
         self.reset_test_btn.clicked.connect(self.reset_test)
+        self.test_mode_btn.clicked.connect(self.start_test_mode)
+        
+        # Test mode variables
+        self.test_mode = False
+        self.test_timer = QTimer()
+        self.test_timer.timeout.connect(self.generate_test_data)
 
     def start_test(self):
         """Start the paper bursting test"""
@@ -116,6 +124,7 @@ class GraphWidget(QWidget):
         # Update UI
         self.start_test_btn.setEnabled(False)
         self.sensitivity_input.setEnabled(False)
+        self.test_mode_btn.setEnabled(False)
         self.peak_label.setText("Peak Pressure: Testing...")
         self.peak_label.setStyleSheet("font-weight: bold; color: orange;")
 
@@ -123,8 +132,12 @@ class GraphWidget(QWidget):
         """Reset the test to initial state"""
         self.test_started = False
         self.test_completed = False
+        self.test_mode = False
         self.peak_pressure = None
         self.peak_time = None
+        
+        # Stop test mode timer
+        self.test_timer.stop()
         
         # Clear data
         self.x.clear()
@@ -143,40 +156,46 @@ class GraphWidget(QWidget):
         # Update UI
         self.start_test_btn.setEnabled(True)
         self.sensitivity_input.setEnabled(True)
+        self.test_mode_btn.setEnabled(True)
         self.peak_label.setText("Peak Pressure: Not detected")
         self.peak_label.setStyleSheet("font-weight: bold; color: red;")
 
     def update_plot(self, value):
         """Add new pressure value to graph"""
-        if value is None or not self.test_started or self.test_completed:
+        if value is None:
             return
 
         elapsed = self.start_time.msecsTo(QTime.currentTime()) / 1000.0  # seconds
         self.x.append(elapsed)
         self.y.append(value)
 
-        # Check if sensitivity threshold is crossed
-        if value >= self.sensitivity_threshold and self.peak_pressure is None:
-            # Peak detected - this is the highest pressure the paper can hold
-            self.peak_pressure = value
-            self.peak_time = elapsed
-            self.test_completed = True
-            
-            # Add peak marker
-            self.peak_marker = self.plot_widget.plot([self.peak_time], [self.peak_pressure], 
-                                                   symbol='o', symbolSize=10, 
-                                                   pen=pg.mkPen(color='red', width=3),
-                                                   symbolBrush='red')
-            
-            # Update UI
-            self.peak_label.setText(f"Peak Pressure: {self.peak_pressure:.2f} hPa")
-            self.peak_label.setStyleSheet("font-weight: bold; color: green;")
-            
-            # Re-enable controls
-            self.start_test_btn.setEnabled(True)
-            self.sensitivity_input.setEnabled(True)
-            
-            return
+        # Only check for peak detection if test is started and not completed
+        if self.test_started and not self.test_completed and self.sensitivity_threshold is not None:
+            # Check if sensitivity threshold is crossed
+            if value >= self.sensitivity_threshold and self.peak_pressure is None:
+                # Peak detected - this is the highest pressure the paper can hold
+                self.peak_pressure = value
+                self.peak_time = elapsed
+                self.test_completed = True
+                
+                # Add peak marker
+                self.peak_marker = self.plot_widget.plot([self.peak_time], [self.peak_pressure], 
+                                                       symbol='o', symbolSize=10, 
+                                                       pen=pg.mkPen(color='red', width=3),
+                                                       symbolBrush='red')
+                
+                # Update UI
+                self.peak_label.setText(f"Peak Pressure: {self.peak_pressure:.2f} hPa")
+                self.peak_label.setStyleSheet("font-weight: bold; color: green;")
+                
+                # Re-enable controls
+                self.start_test_btn.setEnabled(True)
+                self.sensitivity_input.setEnabled(True)
+                
+                # Update the curve data before returning
+                self.curve.setData(self.x, self.y)
+                self.plot_widget.update()
+                return
 
         # Keep last max_points for smooth visualization
         if len(self.x) > self.max_points:
@@ -190,6 +209,68 @@ class GraphWidget(QWidget):
         
         # Force immediate update
         self.plot_widget.update()
+
+    def start_test_mode(self):
+        """Start test mode with fake data generation"""
+        self.test_mode = True
+        self.test_started = True
+        self.test_completed = False
+        self.peak_pressure = None
+        self.peak_time = None
+        
+        # Clear previous data
+        self.x.clear()
+        self.y.clear()
+        self.start_time = QTime.currentTime()
+        
+        # Set a default sensitivity if not set
+        if self.sensitivity_threshold is None:
+            try:
+                self.sensitivity_threshold = float(self.sensitivity_input.text())
+            except ValueError:
+                self.sensitivity_threshold = 50.0  # Default threshold
+                self.sensitivity_input.setText("50.0")
+        
+        # Add threshold line
+        if self.threshold_line is not None:
+            self.plot_widget.removeItem(self.threshold_line)
+        
+        self.threshold_line = self.plot_widget.addLine(y=self.sensitivity_threshold, pen=pg.mkPen(color='r', width=2, style=pg.QtCore.Qt.DashLine))
+        
+        # Remove previous peak marker
+        if self.peak_marker is not None:
+            self.plot_widget.removeItem(self.peak_marker)
+            self.peak_marker = None
+        
+        # Start generating fake data
+        self.test_timer.start(100)  # Generate data every 100ms
+        
+        # Update UI
+        self.start_test_btn.setEnabled(False)
+        self.sensitivity_input.setEnabled(False)
+        self.test_mode_btn.setEnabled(False)
+        self.peak_label.setText("Peak Pressure: Testing...")
+        self.peak_label.setStyleSheet("font-weight: bold; color: orange;")
+
+    def generate_test_data(self):
+        """Generate fake pressure data for testing"""
+        import random
+        import math
+        
+        if not self.test_mode or self.test_completed:
+            return
+        
+        # Generate increasing pressure with some noise
+        elapsed = self.start_time.msecsTo(QTime.currentTime()) / 1000.0
+        base_pressure = min(elapsed * 10, 100)  # Increase pressure over time, max 100
+        noise = random.uniform(-2, 2)
+        pressure = base_pressure + noise
+        
+        # Add some realistic pressure variation
+        pressure += math.sin(elapsed * 2) * 5
+        
+        # Update the plot with fake data
+        self.update_plot(pressure)
 
     def get_test_results(self):
         """Return test results"""
